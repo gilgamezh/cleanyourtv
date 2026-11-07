@@ -701,6 +701,18 @@ final class Config {
             wallpaper = chosen.isEmpty() ? null : chosen.get(0);
             wallpaperEnabled = !chosen.isEmpty();
         }
+        // gilgamezh fork: an Immich album (services.json) replaces the theme's wallpapers; an on-TV "none" still wins.
+        Services.Immich immich = Services.load(ctx).immich;
+        if (immich != null && !WallpaperRotation.CHOICE_NONE.equals(wallpaperChoice)) {
+            wallpapers.clear();
+            wallpapers.addAll(ImmichSync.images(ctx));
+            wallpaperEnabled = true;
+            rotationMinutes = immich.rotationMinutes;
+            wallpaperDim = immich.dim;
+            wallpaperOrder = WallpaperRotation.ORDER_SHUFFLE;
+            wallpaper = wallpapers.isEmpty() ? null : wallpapers.get(0);
+            wallpaperCaptions = true;   // ImmichSync writes captions.txt (date - place, as on the PicPak frames)
+        }
         // A festive skin comes only from a theme; config.xml has no festival. seasonal_skin names one the same way
         // but launchers before it ignore the key, so a theme can carry it without older ones showing the diya skin.
         Festival festival = json == null ? Festival.NONE : Festival.parse(festivalName(json),

@@ -1,0 +1,5 @@
+# Overlay for the Sony BRAVIA remote. Scan codes: 485 YouTube (untouched), 490 Prime Video, 491 Disney+.
+type OVERLAY
+
+map key 490 CALENDAR
+map key 491 CONTACTS

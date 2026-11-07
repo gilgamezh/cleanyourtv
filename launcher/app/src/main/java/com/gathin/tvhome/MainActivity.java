@@ -145,6 +145,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private RecyclerView grid;
     private FrameLayout root;
     private WallpaperPlayer wallpaperPlayer;
+    /** gilgamezh fork: Immich wallpaper and Plex shelf settings (services.json); null sections are off. */
+    private Services services;
+    private PlexShelf plexShelf;
+    /** gilgamezh fork, photo-frame mode: grid rows below the dock stay invisible until focus moves into them. */
+    private boolean gridRowsHidden = true;
+    /** photo_frame_idle_seconds in ms (0 = off): Home fades to the bare wallpaper after this long without a key. */
+    private int idleMs;
+    private boolean idle;
+    private int swallowUp = -1;
+    private final java.util.Map<View, Float> idleAlpha = new java.util.HashMap<>();
+    private final Runnable idleRunnable = this::enterIdle;
     private GlassView glass;
     private View ambient;
     private TextView heroName;
@@ -508,6 +519,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // the theme's background, so launch looks the same.
         getWindow().setBackgroundDrawable(null);
         wallpaperPlayer = new WallpaperPlayer(this, root, cfg);
+        services = Services.load(this);
+        idleMs = getResources().getInteger(R.integer.photo_frame_idle_seconds) * 1000;
+        if (services.plex != null) {
+            plexShelf = new PlexShelf(this, root, services.plex, new PlexShelf.Host() {
+                @Override public void focusDock() {
+                    focusTile(lastFocused >= 0 && lastFocused < COLUMNS ? lastFocused : 0);
+                }
+                @Override public void onShelfFocused() {
+                    hideGlass();
+                    hideHero();
+                }
+            });
+        }
         sky = findViewById(R.id.sky);
         sky.setIntensity(cfg.skyIntensity);
         glass = findViewById(R.id.glass);
@@ -712,7 +736,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // Keep the hero below the header when the library is enabled on a short screen,
             // even when the theme requests an extra visible row below the dock.
             int shelfClearance = cfg.appLibrary ? hero.getMeasuredHeight() + (int) (40 * density) : 0;
-            int want = Math.max(shelfClearance, h - dockRow - gridRows - (int) (AppAdapter.BOTTOM_ROOM_DP * density));
+            // gilgamezh fork: the dock sits lower (photo-frame mode); the rows under it are hidden until Down.
+            float bottomRoom = idleMs > 0 ? 14 : AppAdapter.BOTTOM_ROOM_DP;
+            int want = Math.max(shelfClearance, h - dockRow - gridRows - (int) (bottomRoom * density));
+            if (plexShelf != null) plexShelf.anchorAbove(h - want);
             // Where the rows cannot fit even at the smallest tile (3 rows with the title on), the title keeps its
             // room above the dock and the last rows run off the bottom instead of the title drawing over the clock.
             if (MainActivity.this.dockRow && cfg.dockTitle && rowsBelowDock > 0) want = Math.max(want, (int) (AppAdapter.TITLE_ROOM_DP * density));
@@ -1079,6 +1106,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateClockVisibility();
         clockRefresh.start();   // with timeReceiver: while Home is visible, paused or not
         tileRefresh.onStart();
+        if (services != null && services.immich != null) {
+            ImmichSync.maybeSync(this, services.immich,
+                    () -> runOnUiThread(() -> wallpaperPlayer.replaceFiles(ImmichSync.images(this))));
+        }
+        if (plexShelf != null) plexShelf.refreshIfStale();
     }
 
     @Override
@@ -1134,6 +1166,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (gameDay != null) gameDay.start();
         sky.update();
         wallpaperPlayer.start();
+        wake(false);
+        scheduleIdle();
         handler.postDelayed(minuteTick, MINUTE_MS);
         if (festive && lamp != null) {
             lamp.start();
@@ -1308,6 +1342,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
+        handler.removeCallbacks(idleRunnable);
         stopAmbientAnimation();
         hero.animate().cancel();
         ambient.animate().cancel();
@@ -1380,6 +1415,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         unregisterReceiver(packageReceiver);
         if (openOnStartOnWake) unregisterReceiver(wakeReceiver);
         wallpaperPlayer.close();
+        if (plexShelf != null) plexShelf.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         if (tim != null) tim.unregisterCallback(inputCallback);
@@ -1421,6 +1457,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (photoFrameKey(event)) return true;
         if (homeIgnoreChannelKeys && RemoteKeys.isChannelKey(event.getKeyCode())) return true;
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
@@ -1643,11 +1680,96 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     /** A tile's alpha: dim unless it is the carried one, or, in edit-dock mode, a dock tile other than the chosen place. */
+    // ---- gilgamezh fork: photo-frame mode ------------------------------------------------------------
+
+    /** Rows under the dock fade in when focus moves into them and out again when it returns to the dock. */
+    private void setGridRowsHidden(boolean hide) {
+        if (hide == gridRowsHidden) return;
+        gridRowsHidden = hide;
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            View c = grid.getChildAt(i);
+            if (grid.getChildAdapterPosition(c) >= COLUMNS) c.animate().alpha(hide ? 0f : 1f).setDuration(200).start();
+        }
+    }
+
+    private static boolean passThrough(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+                || keyCode == KeyEvent.KEYCODE_VOLUME_MUTE || keyCode == KeyEvent.KEYCODE_MUTE
+                || keyCode == KeyEvent.KEYCODE_POWER || keyCode == KeyEvent.KEYCODE_SLEEP
+                || keyCode == KeyEvent.KEYCODE_WAKEUP || keyCode == KeyEvent.KEYCODE_TV_POWER;
+    }
+
+    /** While faded out, the first key only brings Home back (its DOWN and UP are consumed); any key restarts the timer. */
+    private boolean photoFrameKey(KeyEvent event) {
+        if (idleMs <= 0 || passThrough(event.getKeyCode())) return false;
+        int code = event.getKeyCode();
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            scheduleIdle();
+            if (idle) {
+                wake(true);
+                swallowUp = code;
+                return true;
+            }
+            return swallowUp == code;   // a repeat of the waking key
+        }
+        if (event.getAction() == KeyEvent.ACTION_UP && swallowUp == code) {
+            swallowUp = -1;
+            return true;
+        }
+        return false;
+    }
+
+    private void scheduleIdle() {
+        handler.removeCallbacks(idleRunnable);
+        if (idleMs > 0 && resumed) handler.postDelayed(idleRunnable, idleMs);
+    }
+
+    private void enterIdle() {
+        if (idle || !resumed) return;
+        View image = wallpaperPlayer.imageView();
+        // Nothing to look at, or a menu / prompt / reorder is open: try again later.
+        if (image == null || !hasWindowFocus() || openPopup != null || cardPrompt != null || reordering) {
+            scheduleIdle();
+            return;
+        }
+        idle = true;
+        TextView caption = wallpaperPlayer.captionView();
+        for (int i = 0; i < root.getChildCount(); i++) {
+            View c = root.getChildAt(i);
+            if (c == image || c == caption || c.getVisibility() != View.VISIBLE) continue;
+            idleAlpha.put(c, c.getAlpha());
+            c.animate().alpha(0f).setDuration(900).start();
+        }
+        if (caption != null) {
+            float dy = root.getHeight() - caption.getBottom() - 30 * density;
+            caption.animate().translationY(dy).setDuration(900).start();
+        }
+    }
+
+    private void wake(boolean animate) {
+        if (!idle) return;
+        idle = false;
+        for (java.util.Map.Entry<View, Float> e : idleAlpha.entrySet()) {
+            View v = e.getKey();
+            v.animate().cancel();
+            if (animate) v.animate().alpha(e.getValue()).setDuration(250).start();
+            else v.setAlpha(e.getValue());
+        }
+        idleAlpha.clear();
+        TextView caption = wallpaperPlayer.captionView();
+        if (caption != null) {
+            caption.animate().cancel();
+            if (animate) caption.animate().translationY(0f).setDuration(250).start();
+            else caption.setTranslationY(0f);
+        }
+    }
+
     private float tileAlpha(int pos) {
         if (movingKey != null) {
             return pos != RecyclerView.NO_POSITION && movingKey.equals(adapter.keyAt(pos)) ? 1f : 0.45f;
         }
         if (dockEditSlot >= 0 && pos >= 0 && pos < COLUMNS && pos != dockEditSlot) return 0.45f;
+        if (idleMs > 0 && gridRowsHidden && pos >= COLUMNS) return 0f;
         return 1f;
     }
 
@@ -1796,6 +1918,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public void onTileFocused(int position, View card) {
+        if (plexShelf != null) {
+            String key = adapter.keyAt(position);
+            plexShelf.setShown(position < COLUMNS && key != null && key.startsWith("com.plexapp.android/"));
+        }
+        if (idleMs > 0) setGridRowsHidden(position < COLUMNS);
         lastFocused = position;
         lastFocusedKey = adapter.keyAt(position);
         // Focus restored before the first layout (cold start): the tile has no size yet, and the glass
@@ -2452,7 +2579,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            if (position < COLUMNS) {
+                // gilgamezh fork: the Plex shelf sits between the dock and the top bar.
+                if (plexShelf != null && plexShelf.isOpen()) {
+                    plexShelf.focus();
+                    return true;
+                }
+                return false;          // dock row: let focus move to the top bar
+            }
             target = position - COLUMNS;
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
@@ -2470,6 +2604,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     @Override public void onLibraryFocused() {
+        if (plexShelf != null) plexShelf.setShown(false);
         libraryFocusPending = false;
         hideGlass();
         hideHero();

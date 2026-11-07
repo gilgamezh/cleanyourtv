@@ -58,9 +58,12 @@ fi
 # is published for x86-64 only, so an arm64 image stops at :app:mergeReleaseResources minutes in (#2941). Docker
 # Desktop runs it under Rosetta or QEMU; on an x86-64 computer the flag changes nothing.
 PLATFORM=linux/amd64
+# DOCKER_NETWORK=host for hosts whose bridge network lacks a route the JVM tries first (e.g. IPv6-only AAAA answers).
+NET_ARGS=()
+[ -n "${DOCKER_NETWORK:-}" ] && NET_ARGS=(--network "$DOCKER_NETWORK")
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "Building the $IMAGE image once (JDK 17, Android SDK 34, build-tools 34.0.0; a few minutes)..."
-  docker build --platform "$PLATFORM" -t "$IMAGE" "$ROOT/tools/docker"
+  docker build ${NET_ARGS[@]+"${NET_ARGS[@]}"} --platform "$PLATFORM" -t "$IMAGE" "$ROOT/tools/docker"
 fi
 
 # Git Bash on Windows rewrites /paths in arguments and gives POSIX paths Docker can't mount.
@@ -77,7 +80,7 @@ case "$(uname -s)" in
     ;;
 esac
 # The whole repository is mounted: an add-on's gradlew may call ../../launcher/gradlew.
-docker run --rm --platform "$PLATFORM" ${USER_ARGS[@]+"${USER_ARGS[@]}"} ${KEY_ARGS[@]+"${KEY_ARGS[@]}"} \
+docker run --rm ${NET_ARGS[@]+"${NET_ARGS[@]}"} --platform "$PLATFORM" ${USER_ARGS[@]+"${USER_ARGS[@]}"} ${KEY_ARGS[@]+"${KEY_ARGS[@]}"} \
   -v "$SRC:/repo" -v "$GRADLE_VOLUME:/gradle" -w "/repo/$PROJECT" \
   -e ANDROID_USER_HOME="$KEY_DIR" \
   "$IMAGE" sh ./gradlew --no-daemon --console=plain "${TASKS[@]}"

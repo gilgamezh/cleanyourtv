@@ -212,7 +212,7 @@
                         android:format12Hour="h:mm"
                         android:format24Hour="HH:mm"
                         android:textColor="#FFFFFFFF"
-                        android:textSize="52sp"
+                        android:textSize="36sp"
                         android:fontFamily="@string/font_light"
                         android:letterSpacing="-0.04"
                         android:includeFontPadding="false" />
@@ -227,7 +227,7 @@
                         android:format12Hour="a"
                         android:format24Hour=""
                         android:textColor="#B3FFFFFF"
-                        android:textSize="15sp"
+                        android:textSize="12sp"
                         android:fontFamily="@string/font_medium"
                         android:letterSpacing="0.08"
                         android:textAllCaps="true" />
@@ -235,7 +235,7 @@
                     <View
                         android:id="@+id/clockDivider"
                         android:layout_width="1dp"
-                        android:layout_height="26dp"
+                        android:layout_height="18dp"
                         android:layout_gravity="bottom"
                         android:layout_marginStart="16dp"
                         android:layout_marginEnd="16dp"
@@ -277,7 +277,7 @@
                             android:format12Hour="@string/date_format_home"
                             android:format24Hour="@string/date_format_home"
                             android:textColor="#A6FFFFFF"
-                            android:textSize="14sp"
+                            android:textSize="12sp"
                             android:fontFamily="@string/font_regular"
                             android:letterSpacing="0.14"
                             android:textAllCaps="true" />

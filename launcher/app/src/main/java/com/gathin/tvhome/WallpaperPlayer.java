@@ -53,8 +53,12 @@ final class WallpaperPlayer {
     private boolean loading;
     private String displayed = "";
     /** wallpaper_captions: the shown picture's name from wallpapers/captions.txt; null when off or there are none. */
-    private final TextView caption;
-    private final Map<String, String> names;
+    private TextView caption;
+    private Map<String, String> names;
+    /** wallpaper_captions as configured, so a later set of pictures (replaceFiles) can bring its own captions. */
+    private final boolean captionsWanted;
+    /** gilgamezh fork: show the whole picture (letterboxed on the background colour) instead of filling the screen. */
+    private final boolean fit;
     /** wallpaper_moods: the collection's groups by time of day; empty rotates through all of it. */
     private final Map<String, Set<String>> moods;
     /** config.xml latitude and longitude for the sun's times, and today's {sunrise, sunset} once worked out. */
@@ -86,15 +90,41 @@ final class WallpaperPlayer {
         width = metrics.widthPixels;
         height = metrics.heightPixels;
         image = new ImageView(context);
-        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        Services.Immich immich = Services.load(context).immich;
+        fit = immich != null && immich.fit;
+        image.setScaleType(fit ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
         image.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        names = config.wallpaperCaptions && config.wallpaperEnabled && !files.isEmpty()
+        captionsWanted = config.wallpaperCaptions && config.wallpaperEnabled;
+        names = captionsWanted && !files.isEmpty()
                 ? WallpaperCaptions.read(files.get(0).getParentFile()) : Collections.emptyMap();
         caption = names.isEmpty() ? null : makeCaption(context, root);
         if (config.wallpaperEnabled && !files.isEmpty()) {
             root.addView(image, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             showFirst();
+        }
+    }
+
+    /**
+     * gilgamezh fork: a new set of pictures (the Immich pool after a sync). The picture on screen stays until the
+     * rotation is due; with nothing on screen yet, the first one shows at once.
+     */
+    void replaceFiles(List<File> next) {
+        if (closed || next == null || next.isEmpty()) return;
+        files.clear();
+        files.addAll(next);
+        if (image.getParent() == null) {
+            root.addView(image, 0, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        if (captionsWanted) {
+            names = WallpaperCaptions.read(files.get(0).getParentFile());
+            if (caption == null && !names.isEmpty()) caption = makeCaption(root.getContext(), root);
+        }
+        if (current == null) showFirst();
+        else {
+            showCaption(false);
+            if (active) update();
         }
     }
 
@@ -113,7 +143,7 @@ final class WallpaperPlayer {
             if (bitmap != null) {
                 show(bitmap);
                 // The picture covers the whole screen: the root's plain colour under it is overdraw.
-                root.setBackground(null);
+                if (!fit) root.setBackground(null);
                 displayed = first.getName();
                 showCaption(false);
                 if (!displayed.equals(previous)) {
@@ -127,6 +157,10 @@ final class WallpaperPlayer {
             first = WallpaperRotation.pick(playable, previous, order, random);
         }
     }
+
+    /** gilgamezh fork (photo-frame mode): the views that stay when Home fades out. */
+    View imageView() { return image.getParent() != null && current != null ? image : null; }
+    TextView captionView() { return caption; }
 
     void start() {
         active = true;
@@ -210,7 +244,7 @@ final class WallpaperPlayer {
     private static TextView makeCaption(Context context, FrameLayout root) {
         float dp = context.getResources().getDisplayMetrics().density;
         TextView text = new TextView(context);
-        text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         text.setTextColor(0xD9FFFFFF);
         text.setShadowLayer(6 * dp, 0, dp, 0xCC000000);
         text.setSingleLine(true);
@@ -225,7 +259,8 @@ final class WallpaperPlayer {
         }
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
-        params.topMargin = Math.round(110 * dp);
+        // gilgamezh fork: right-aligned under the icon pills, above the Plex shelf.
+        params.topMargin = Math.round(74 * dp);
         params.setMarginEnd(Math.round(62 * dp));
         root.addView(text, params);
         return text;
@@ -263,8 +298,8 @@ final class WallpaperPlayer {
     private void show(Bitmap bitmap) {
         Bitmap old = current;
         current = bitmap;
-        // The wallpaper covers the whole root; avoid drawing the fallback colour under it.
-        root.setBackground(null);
+        // The wallpaper covers the whole root; avoid drawing the fallback colour under it (letterboxed: keep it).
+        if (!fit) root.setBackground(null);
         image.setImageBitmap(bitmap);
         if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
     }

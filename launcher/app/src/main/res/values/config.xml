@@ -17,10 +17,12 @@
 
     <!-- Apps pinned to the dock row at the bottom, in this order. Missing apps are skipped. -->
     <string-array name="dock_apps">
-        <item>com.netflix.ninja</item>
-        <item>com.amazon.amazonvideo.livingroom</item>
+        <item>com.plexapp.android</item>
+        <item>com.ziggo.tv</item>
         <item>com.google.android.youtube.tv</item>
-        <item>in.startv.hotstar</item>
+        <item>tv.standard.nebula</item>
+        <item>nl.nos.app</item>
+        <item>nl.uitzendinggemist</item>
     </string-array>
     <!-- With fewer dock_apps than columns (or a dock app that is not installed), the free dock slots take
          the first grid apps, so the dock never shows a gap. false leaves them empty (#162); a theme can
@@ -31,10 +33,11 @@
     <string-array name="hidden_apps">
         <item>com.mediatek.wwtv.tvcenter</item>
         <item>com.mitv.gallery</item>
+        <item>com.sony.dtv.tvx</item>
     </string-array>
 
     <!-- The TV's Live TV / tuner app, offered at the end of the Inputs menu. Leave empty to omit. -->
-    <string name="live_tv_package" translatable="false">com.mediatek.wwtv.tvcenter</string>
+    <string name="live_tv_package" translatable="false">com.sony.dtv.tvx</string>
 
     <!-- Open the Live TV app above the first time Home comes up after the TV is switched on, for sets that are
          mostly used for broadcast TV. Once per boot: Home after that stays Home. Can also be set with
@@ -272,7 +275,7 @@
     <!-- A name after the greeting: "Mr. Trịnh" shows GOOD MORNING, MR. TRỊNH. Empty: the greeting alone. -->
     <string name="greeting_name" translatable="false"></string>
     <!-- The greeting above the clock ("Good evening"). false hides it. Can also be set with "show_greeting" in a theme. -->
-    <bool name="show_greeting">true</bool>
+    <bool name="show_greeting">false</bool>
     <!-- The date and the line between the clock and the date in the clock's full white instead of dimmed. Can also be
          set with "header_white" in a theme. -->
     <bool name="header_white">false</bool>
@@ -320,9 +323,9 @@
     <bool name="reorder_button">false</bool>
     <!-- Wi-Fi and Settings as round icon-only buttons (the network name moves to the talkback description);
          Inputs keeps its label. -->
-    <bool name="icon_only_buttons">false</bool>
+    <bool name="icon_only_buttons">true</bool>
     <!-- The Inputs pill as a round icon button too (the label moves to the talkback description). -->
-    <bool name="icon_only_inputs">false</bool>
+    <bool name="icon_only_inputs">true</bool>
     <!-- With vpn_pill, the VPN pill as a round icon button too: an open lock on the plain glass button while no VPN is
          up, the closed lock in a green outline while one is (solid green only while focused, like the pill). "VPN" /
          "VPN off" become its talkback description. A theme can set "icon_only_vpn": true. -->
@@ -396,13 +399,18 @@
          the dock, its title and this many rows would not otherwise fit the screen height. -->
     <integer name="rows_below_dock">0</integer>
 
+    <!-- gilgamezh fork, photo-frame mode: after this many seconds without a key on Home, everything but the wallpaper
+         (and its caption, moved to the bottom-right corner) fades out; the first key brings it back without acting.
+         The dock also sits lower and the rows under it stay hidden until focus moves into them. 0 = off. -->
+    <integer name="photo_frame_idle_seconds">8</integer>
+
     <!-- The focused dock app's name in large type above the dock. false keeps only the glow, which leaves room
          for bigger tiles when rows_below_dock is 2 or 3. -->
-    <bool name="dock_title">true</bool>
+    <bool name="dock_title">false</bool>
 
     <!-- Tiles per row in the grid; the dock always has this many slots. Tiles are 180dp wide at 4 columns and
          shrink to fit from 5 up (about 144dp at 5, 117dp at 6 on a 1080p TV). -->
-    <integer name="columns">4</integer>
+    <integer name="columns">6</integer>
 
     <!-- Basic motion is on; advanced effects are opt-in in the launcher's own Settings screen. -->
     <bool name="animations">true</bool>
@@ -502,7 +510,7 @@
     <!-- The glow behind the dock in the focused app's colour (red for YouTube, blue for Prime Video). false keeps
          only background_color or the wallpaper behind everything. Can also be set with "ambient_glow": false in a
          theme's config.json. -->
-    <bool name="ambient_glow">true</bool>
+    <bool name="ambient_glow">false</bool>
     <!-- true: when the focus moves to an app of another colour, the ambient glow takes the new colour in one frame
          instead of dimming and fading back in. Each frame of that fade repaints the whole screen, about 40 per key
          press, which a slow GPU such as the Mali-G52 cannot keep up with. Can also be set with "glow_snap" in a
